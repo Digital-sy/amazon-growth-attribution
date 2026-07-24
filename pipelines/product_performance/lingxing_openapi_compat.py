@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""与 lx-product-m 完全一致的领星 OpenAPI 客户端。"""
+"""与 lx-product-m 完全一致并兼容布尔参数的领星 OpenAPI 客户端。"""
 from __future__ import annotations
 
 import base64
@@ -30,7 +30,10 @@ def _format_params(request_params: Optional[dict[str, Any]]) -> str:
         value = request_params[key]
         if value == "" or value is None:
             continue
-        if isinstance(value, (dict, list)):
+        if isinstance(value, bool):
+            # 请求体由 orjson 序列化为 true/false；签名必须使用同样的小写形式。
+            value_text = orjson.dumps(value).decode()
+        elif isinstance(value, (dict, list)):
             value_text = orjson.dumps(value, option=orjson.OPT_SORT_KEYS).decode()
         else:
             value_text = str(value)
