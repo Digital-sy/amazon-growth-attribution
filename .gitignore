@@ -1,0 +1,35 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Raw Amazon reports and generated data
+*.txt
+*.csv
+*.tsv
+*.xlsx
+*.xls
+data/
+raw/
+input/
+output/
+failed/
+logs/
+*.log
+
+# Archives
+*.zip
