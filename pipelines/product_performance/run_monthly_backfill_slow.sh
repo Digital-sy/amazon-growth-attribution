@@ -3,7 +3,7 @@ set -u
 
 PROJECT_DIR="${PROJECT_DIR:-/data/bi_scripts/amazon-growth-attribution}"
 PYTHON_BIN="${PYTHON_BIN:-/data/venvs/bi_venv/bin/python}"
-JOB_FILE="$PROJECT_DIR/pipelines/product_performance/ods_lx_product_performance_monthly_msku_v3.py"
+JOB_FILE="$PROJECT_DIR/pipelines/product_performance/ods_lx_product_performance_monthly_msku_v4.py"
 
 START_MONTH="${START_MONTH:-2025-01}"
 END_MONTH="${END_MONTH:-2026-07}"
