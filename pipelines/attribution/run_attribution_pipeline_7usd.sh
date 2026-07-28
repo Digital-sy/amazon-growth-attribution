@@ -42,7 +42,7 @@ scalar() {
 }
 
 log "先执行产品表现月度广告统计分配"
-"$SCRIPT_DIR/run_attribution_pipeline_product_monthly.sh" "$@"
+bash "$SCRIPT_DIR/run_attribution_pipeline_product_monthly.sh" "$@"
 
 if [[ -n "${ATTR_START_MONTH:-}" ]]; then
   START_MONTH="$ATTR_START_MONTH"
@@ -89,7 +89,7 @@ fi
 
 log "按7美元规则重算：$START_MONTH 至 $END_MONTH_EXCLUSIVE（结束月不含）；店铺：${STORES[*]}"
 
-"${MYSQL[@]}" 2>&1 | tee -a "$LOG_FILE" <<SQL
+"${MYSQL[@]}" <<SQL 2>&1 | tee -a "$LOG_FILE"
 START TRANSACTION;
 
 UPDATE dwd_amz_order_attribution_base
