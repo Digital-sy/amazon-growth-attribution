@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `dwd_amz_order_attribution_base` (
     `offsite_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'promotion_ids命中MPC-',
     `shipping_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '免运费类促销标识',
     `onsite_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Percentage Off、PLM或商品促销折扣>0',
-    `low_price_candidate_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '排除站外和站内促销后净单价<=10美元',
+    `low_price_candidate_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '排除站外和站内促销后净单价<=7美元',
     `rule_version` VARCHAR(32) NOT NULL DEFAULT 'v1_20260727',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`source_id`),
