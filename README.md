@@ -8,7 +8,7 @@
 
 当前已经形成两条可用的数据链路：
 
-1. **店铺 × 月份的五类订单来源结构**；
+1. **店铺 × 月份/季度/半年度的五类订单来源结构**；
 2. **款号 × 月份的销量加权成交价**。
 
 V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
@@ -51,11 +51,29 @@ V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
 - 站外推广、站内促销和低价主要由订单及促销字段识别；
 - 广告在缺少 Amazon 订单号级来源时采用可复现的统计分配；
 - 原始标签和最终互斥分类同时保留；
-- 广告分配保留层级、置信度、规则版本和月度审计。
+- 广告分配保留层级、置信度、规则版本和月度审计；
+- **低价定义为：排除站外推广、广告和站内促销后，净成交单价≤7美元。**
 
-当前五类结果适合用于**店铺 × 月份**的来源结构分析，不代表 Amazon 官方逐单广告归因。
+当前五类结果适合用于**店铺 × 月份/季度/半年度**的来源结构分析，不代表 Amazon 官方逐单广告归因。
 
-### 3. 款号月度成交价
+### 3. 多统计周期
+
+五类来源基础事实表按月保存，报表支持：
+
+- 月度；
+- 季度：Q1=1-3月、Q2=4-6月、Q3=7-9月、Q4=10-12月；
+- 半年度：上半年=1-6月、下半年=7-12月。
+
+默认只输出完整周期。统计范围为2025-01至2026-07时，默认输出：
+
+```text
+季度：2025-Q1、2025-Q2、2025-Q3、2025-Q4、2026-Q1、2026-Q2
+半年度：2025上半年、2025下半年、2026上半年
+```
+
+2026-Q3和2026下半年仍未完结，默认不纳入；可通过环境变量显式输出未完结周期。
+
+### 4. 款号月度成交价
 
 已打通以下关联链路：
 
@@ -100,6 +118,28 @@ purchase_date_utc 非空
 
 订单月份以 `purchase_date_utc` 从 UTC 转换为 `America/Los_Angeles` 后归属。
 
+### 低价
+
+```text
+净成交单价
+= (item_price - item_promotion_discount) / quantity
+```
+
+在排除站外推广、广告和站内促销后：
+
+```text
+净成交单价 <= 7 USD → 低价
+净成交单价 > 7 USD  → 自然
+```
+
+生产入口使用规则版本：
+
+```text
+v4_7usd_20260728
+```
+
+历史按10美元阈值生成的五类结果，需要重新运行归因入口才能切换到7美元口径。
+
 ### 成交价
 
 只计算商品本身的净成交金额：
@@ -125,6 +165,9 @@ ods_amz_all_orders_report
         │                       │
         │                       ▼
         │               店铺 × 月份来源汇总
+        │                       │
+        │                       ├──► 季度汇总
+        │                       └──► 半年度汇总
         │
         └──► Listing ──► 本地SKU ──► 产品管理快照
                                     │
@@ -141,17 +184,23 @@ ods_amz_all_orders_report
 - `dws_amz_order_source_monthly`：店铺月度五类来源汇总；
 - 广告分配月度审计表。
 
+季度和半年度报表基于 `dws_amz_order_source_monthly` 汇总，不重复维护另一套事实数据。
+
 ## 项目结构
 
 ```text
 amazon-growth-attribution/
 ├─ pipelines/
 │  ├─ orders/                 # All Orders基础导入、建表及索引
-│  └─ attribution/            # 五类归因、月度回填和广告统计分配
+│  └─ attribution/
+│     ├─ run_attribution_pipeline.sh
+│     ├─ run_attribution_pipeline_7usd.sh
+│     └─ ...                  # 五类归因、月度回填和广告统计分配
 ├─ imports/
 │  ├─ import_amazon_orders_txt_monthly.py
 │  └─ import_amazon_orders_txt_monthly_v2.py
 ├─ reports/
+│  ├─ export_order_source_period_summary.py
 │  ├─ export_style_monthly_deal_price.py
 │  └─ export_style_monthly_deal_price_by_store.py
 ├─ docs/
@@ -202,7 +251,46 @@ python imports/import_amazon_orders_txt_monthly_v2.py \
 
 未完结月份文件为月累计数据，禁止直接追加。重新下载最新文件后，应再次执行整月替换。
 
-### 4. 导出款号月度成交价综合版
+### 4. 按7美元规则重跑五类归因
+
+```bash
+ATTR_START_MONTH='2025-01-01' \
+ATTR_END_MONTH_EXCLUSIVE='2026-08-01' \
+ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
+bash pipelines/attribution/run_attribution_pipeline.sh
+```
+
+主入口会先执行产品表现月度广告分配，再统一按净成交单价≤7美元重算低价/自然，并重建月度五类汇总。
+
+### 5. 导出季度和半年度来源结构
+
+```bash
+ATTR_EXPORT_START_MONTH='2025-01-01' \
+ATTR_EXPORT_END_MONTH_EXCLUSIVE='2026-08-01' \
+ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
+python reports/export_order_source_period_summary.py
+```
+
+默认输出完整周期：
+
+```text
+2025-Q1/Q2/Q3/Q4
+2026-Q1/Q2
+2025上半年/下半年
+2026上半年
+```
+
+需要包含2026-Q3和2026下半年当前累计值时：
+
+```bash
+ATTR_INCLUDE_PARTIAL_PERIODS=1 \
+ATTR_EXPORT_START_MONTH='2025-01-01' \
+ATTR_EXPORT_END_MONTH_EXCLUSIVE='2026-08-01' \
+ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
+python reports/export_order_source_period_summary.py
+```
+
+### 6. 导出款号月度成交价综合版
 
 ```bash
 DEAL_PRICE_START_MONTH='2025-01-01' \
@@ -211,7 +299,7 @@ DEAL_PRICE_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
 python reports/export_style_monthly_deal_price.py
 ```
 
-### 5. 按店铺拆分导出
+### 7. 按店铺拆分导出
 
 ```bash
 DEAL_PRICE_START_MONTH='2025-01-01' \
@@ -227,6 +315,10 @@ python reports/export_style_monthly_deal_price_by_store.py
 ### 广告不是官方逐单归因
 
 普通广告数据缺少 Amazon 订单号级关联，因此广告订单属于统计分配结果。必须结合分配层级、置信度和审计结果使用。
+
+### 季度和半年度是月度结果汇总
+
+季度及半年度结果来自月度五类汇总的加总，不会提高广告归因精度。它们用于管理周期观察，不代表获得了更细粒度的来源事实。
 
 ### 款号成交价不等于款号来源归因
 
