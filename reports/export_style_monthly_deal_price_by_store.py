@@ -24,6 +24,9 @@ def load_base_module():
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载基础导出脚本：{BASE_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
+    # dataclass 在解析字段类型时会通过 cls.__module__ 查询 sys.modules。
+    # 动态 exec_module 前必须先注册，否则 Python 3.10 会出现 NoneType.__dict__。
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
