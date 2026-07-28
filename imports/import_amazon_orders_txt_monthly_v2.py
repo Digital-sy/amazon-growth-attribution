@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""兼容审计字段的 Amazon All Orders TXT 月累计导入入口。
+"""兼容审计字段及 quantity=0 的 Amazon All Orders TXT 月累计导入入口。
 
 在原导入器基础上自动补充目标表必填审计字段：
 - source_file_sha256：源文件 SHA-256
 - source_row_no：TXT 原始行号（表头后的首行从 2 开始）
 - import_batch_no：本次导入批次号
+
+Amazon All Orders 原始报告中，取消/未完成的订单明细可能出现 quantity=0。
+ODS 原始层应保留这些记录，因此本入口允许 quantity=0，但仍拒绝负数。
+成交价和有效订单统计在下游继续使用 quantity>0 过滤。
 
 其余预检、整月替换、事务回滚和写后核验逻辑复用
 import_amazon_orders_txt_monthly.py。
@@ -16,6 +20,7 @@ import hashlib
 import importlib.util
 import sys
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +57,17 @@ def resolve_txt_path(argv: list[str]) -> Path:
     return path
 
 
+def is_zero_quantity(base: Any, source: dict[str, str]) -> bool:
+    raw = base.source_value(source, "quantity")
+    text = base.clean(raw)
+    if text == "":
+        return False
+    try:
+        return Decimal(text.replace(",", "")) == 0
+    except InvalidOperation:
+        return False
+
+
 def main() -> int:
     path = resolve_txt_path(sys.argv)
     base = load_base_module()
@@ -84,20 +100,46 @@ def main() -> int:
         source_file: str,
     ):
         enriched_rows: list[dict[str, str]] = []
-        for source in source_rows:
+        zero_quantity_indexes: set[int] = set()
+
+        for row_index, source in enumerate(source_rows):
             enriched = dict(source)
             enriched["source_file_sha256"] = file_sha256
             enriched["source_row_no"] = str(enriched.get("__line_no__") or "")
             enriched["import_batch_no"] = batch_no
+
+            # 基础导入器旧逻辑要求 quantity>0。对于 Amazon 原始报告中合法的
+            # quantity=0 行，先临时改为1通过结构和类型校验，随后在结果元组中恢复0。
+            if is_zero_quantity(base, enriched):
+                zero_quantity_indexes.add(row_index)
+                enriched["quantity"] = "1"
+
             enriched_rows.append(enriched)
 
-        return original_build_insert_rows(
+        insert_columns, insert_rows, stats = original_build_insert_rows(
             enriched_rows,
             table_columns,
             store_name=store_name,
             month_start=month_start,
             source_file=source_file,
         )
+
+        if zero_quantity_indexes:
+            if "quantity" not in insert_columns:
+                raise RuntimeError("目标写入字段缺少 quantity，无法恢复零数量记录")
+            quantity_index = insert_columns.index("quantity")
+            restored_rows: list[tuple[Any, ...]] = []
+            for row_index, row in enumerate(insert_rows):
+                if row_index in zero_quantity_indexes:
+                    values = list(row)
+                    values[quantity_index] = 0
+                    restored_rows.append(tuple(values))
+                else:
+                    restored_rows.append(row)
+            insert_rows = restored_rows
+
+        stats["zero_quantity_rows"] = len(zero_quantity_indexes)
+        return insert_columns, insert_rows, stats
 
     base.build_insert_rows = build_insert_rows_with_audit
 
