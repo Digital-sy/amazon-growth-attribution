@@ -6,7 +6,7 @@
 
 **V1.0 已完成。**
 
-当前已经形成两条可用的数据链路：
+当前形成两条可用的数据链路：
 
 1. **店铺 × 月份/季度/半年度的五类订单来源结构**；
 2. **款号 × 月份的销量加权成交价**。
@@ -17,12 +17,12 @@ V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
 店铺 × 月份 × 款号 × 来源类型
 ```
 
-详细成果、验收快照、已知限制和 V2.0 路线图见：
+详细文档：
 
 - [V1.0 成果总结](docs/v1_0_summary.md)
 - [订单来源归因规则](docs/order_attribution_rules.md)
 
-## V1.0 解决的问题
+## V1.0 完成范围
 
 ### 1. Amazon All Orders 原始数据入库
 
@@ -31,7 +31,7 @@ V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
 - Seller Central All Orders Report TXT 流式/分批入库；
 - UTF-8 BOM、制表符和动态表头识别；
 - 订单商品唯一键和幂等处理；
-- 来源文件、SHA-256、源行号、导入批次审计；
+- 来源文件、SHA-256、源行号和导入批次审计；
 - 目录批量导入；
 - 未完结月份月累计文件整月替换；
 - `RKZ2607-.txt` 等特殊文件名解析；
@@ -40,7 +40,7 @@ V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
 
 ### 2. 五类互斥订单来源
 
-最终分类优先级：
+分类优先级：
 
 ```text
 站外推广 > 广告 > 站内促销 > 低价 > 自然
@@ -52,30 +52,61 @@ V2.0 将在取得稳定的 SKU/MSKU 级来源数据后，继续推进：
 - 广告在缺少 Amazon 订单号级来源时采用可复现的统计分配；
 - 原始标签和最终互斥分类同时保留；
 - 广告分配保留层级、置信度、规则版本和月度审计；
-- **低价定义为：排除站外推广、广告和站内促销后，净成交单价≤7美元。**
+- **低价定义为：排除站外推广、广告和站内促销后，净成交单价 ≤ 7 美元。**
 
-当前五类结果适合用于**店铺 × 月份/季度/半年度**的来源结构分析，不代表 Amazon 官方逐单广告归因。
+当前结果适合用于**店铺 × 月份/季度/半年度**的来源结构分析，不代表 Amazon 官方逐单广告归因。
 
-### 3. 多统计周期
+### 3. 月度、季度和半年度
 
-五类来源基础事实表按月保存，报表支持：
+五类来源事实表按月保存，季度和半年度由月度结果动态汇总，不重复维护另一套事实数据。
 
-- 月度；
-- 季度：Q1=1-3月、Q2=4-6月、Q3=7-9月、Q4=10-12月；
-- 半年度：上半年=1-6月、下半年=7-12月。
+统计周期：
 
-默认只输出完整周期。统计范围为2025-01至2026-07时，默认输出：
+```text
+月度：YYYY-MM
+季度：Q1=1-3月，Q2=4-6月，Q3=7-9月，Q4=10-12月
+半年度：上半年=1-6月，下半年=7-12月
+```
+
+统计范围为 2025-01 至 2026-07 时，默认完整周期包括：
 
 ```text
 季度：2025-Q1、2025-Q2、2025-Q3、2025-Q4、2026-Q1、2026-Q2
 半年度：2025上半年、2025下半年、2026上半年
 ```
 
-2026-Q3和2026下半年仍未完结，默认不纳入；可通过环境变量显式输出未完结周期。
+`2026-Q3` 和 `2026下半年` 尚未完结，默认不输出；设置 `ATTR_INCLUDE_PARTIAL_PERIODS=1` 可输出当前累计值并标记为未完结周期。
 
-### 4. 款号月度成交价
+### 4. 完整五类来源 Excel
 
-已打通以下关联链路：
+主导出脚本：
+
+```text
+reports/export_order_source_summary.py
+```
+
+生成的一个 Excel 文件同时包含：
+
+```text
+总览
+月度汇总
+季度汇总
+半年度汇总
+店铺月度明细
+广告审计
+口径说明
+```
+
+其中：
+
+- 原有月度和审计 Sheet 全部保留；
+- `季度汇总` 和 `半年度汇总` 为新增 Sheet；
+- 季度、半年度页同时包含“全部店铺”和各店铺结果；
+- `reports/export_order_source_period_summary.py` 保留为兼容入口，也会调用完整工作簿导出，不再生成简化版文件。
+
+### 5. 款号月度成交价
+
+关联链路：
 
 ```text
 订单 store_name + MSKU
@@ -125,30 +156,28 @@ purchase_date_utc 非空
 = (item_price - item_promotion_discount) / quantity
 ```
 
-在排除站外推广、广告和站内促销后：
+排除站外推广、广告和站内促销后：
 
 ```text
 净成交单价 <= 7 USD → 低价
 净成交单价 > 7 USD  → 自然
 ```
 
-生产入口使用规则版本：
+生产规则版本：
 
 ```text
 v4_7usd_20260728
 ```
 
-历史按10美元阈值生成的五类结果，需要重新运行归因入口才能切换到7美元口径。
+历史按 10 美元阈值生成的结果，需要重新运行归因入口才能切换到 7 美元口径。
 
-### 成交价
-
-只计算商品本身的净成交金额：
+### 成交金额
 
 ```text
-item_price - item_promotion_discount
+净商品销售额 = item_price - item_promotion_discount
 ```
 
-不包含买家运费、税费、退款、平台费、FBA费和广告费。
+不包含买家运费、税费、退款、平台费、FBA 费和广告费。
 
 ## 数据流程
 
@@ -184,23 +213,22 @@ ods_amz_all_orders_report
 - `dws_amz_order_source_monthly`：店铺月度五类来源汇总；
 - 广告分配月度审计表。
 
-季度和半年度报表基于 `dws_amz_order_source_monthly` 汇总，不重复维护另一套事实数据。
-
 ## 项目结构
 
 ```text
 amazon-growth-attribution/
 ├─ pipelines/
-│  ├─ orders/                 # All Orders基础导入、建表及索引
+│  ├─ orders/                         # All Orders导入、建表和索引
 │  └─ attribution/
-│     ├─ run_attribution_pipeline.sh
+│     ├─ run_attribution_pipeline.sh  # 正式入口
 │     ├─ run_attribution_pipeline_7usd.sh
-│     └─ ...                  # 五类归因、月度回填和广告统计分配
+│     └─ ...                          # 月度回填和广告统计分配
 ├─ imports/
 │  ├─ import_amazon_orders_txt_monthly.py
 │  └─ import_amazon_orders_txt_monthly_v2.py
 ├─ reports/
-│  ├─ export_order_source_period_summary.py
+│  ├─ export_order_source_summary.py          # 完整五类来源工作簿
+│  ├─ export_order_source_period_summary.py   # 兼容入口，同样输出完整工作簿
 │  ├─ export_style_monthly_deal_price.py
 │  └─ export_style_monthly_deal_price_by_store.py
 ├─ docs/
@@ -212,22 +240,12 @@ amazon-growth-attribution/
 └─ README.md
 ```
 
-`reports/` 目录还包含五类订单月度汇总和审计结果的 Excel 导出脚本。
-
 ## 快速开始
 
-### 1. 安装环境
+### 1. 加载生产环境
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-生产服务器可直接加载现有环境变量文件：
-
-```bash
+cd /data/bi_scripts/amazon-growth-attribution
 source /root/lingxing_env.sh
 ```
 
@@ -237,8 +255,6 @@ source /root/lingxing_env.sh
 python imports/import_amazon_orders_txt_monthly_v2.py \
   imports/data/JQ2607-.txt
 ```
-
-预检默认不修改数据库。
 
 ### 3. 整月替换导入
 
@@ -251,7 +267,7 @@ python imports/import_amazon_orders_txt_monthly_v2.py \
 
 未完结月份文件为月累计数据，禁止直接追加。重新下载最新文件后，应再次执行整月替换。
 
-### 4. 按7美元规则重跑五类归因
+### 4. 按 7 美元规则重跑五类归因
 
 ```bash
 ATTR_START_MONTH='2025-01-01' \
@@ -260,33 +276,38 @@ ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
 bash pipelines/attribution/run_attribution_pipeline.sh
 ```
 
-主入口会先执行产品表现月度广告分配，再统一按净成交单价≤7美元重算低价/自然，并重建月度五类汇总。
+主入口会先执行产品表现月度广告分配，再按净成交单价 ≤ 7 美元重算低价/自然，并重建月度五类汇总。
 
-### 5. 导出季度和半年度来源结构
+### 5. 导出完整五类来源工作簿
 
 ```bash
 ATTR_EXPORT_START_MONTH='2025-01-01' \
 ATTR_EXPORT_END_MONTH_EXCLUSIVE='2026-08-01' \
 ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
-python reports/export_order_source_period_summary.py
+python reports/export_order_source_summary.py
 ```
 
-默认输出完整周期：
+默认输出完整月度、季度和半年度结果，并保留总览、店铺月度明细、广告审计、口径说明等原有 Sheet。
+
+输出文件：
 
 ```text
-2025-Q1/Q2/Q3/Q4
-2026-Q1/Q2
-2025上半年/下半年
-2026上半年
+exports/amazon_order_source_summary_202501_202607.xlsx
 ```
 
-需要包含2026-Q3和2026下半年当前累计值时：
+需要包含未完结的 `2026-Q3` 和 `2026下半年` 时：
 
 ```bash
 ATTR_INCLUDE_PARTIAL_PERIODS=1 \
 ATTR_EXPORT_START_MONTH='2025-01-01' \
 ATTR_EXPORT_END_MONTH_EXCLUSIVE='2026-08-01' \
 ATTR_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
+python reports/export_order_source_summary.py
+```
+
+此前使用过的兼容命令仍可运行，并会生成同样的完整工作簿：
+
+```bash
 python reports/export_order_source_period_summary.py
 ```
 
@@ -299,7 +320,7 @@ DEAL_PRICE_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
 python reports/export_style_monthly_deal_price.py
 ```
 
-### 7. 按店铺拆分导出
+### 7. 按店铺拆分款号月度成交价
 
 ```bash
 DEAL_PRICE_START_MONTH='2025-01-01' \
@@ -308,7 +329,7 @@ DEAL_PRICE_STORES='JQ-US,MT-US,RKZ-US,SY-US' \
 python reports/export_style_monthly_deal_price_by_store.py
 ```
 
-输出文件位于 `exports/`，该目录中的真实业务结果不得提交到仓库。
+所有输出文件位于 `exports/`，真实业务结果不得提交到仓库。
 
 ## V1.0 已知限制
 
@@ -322,7 +343,7 @@ python reports/export_style_monthly_deal_price_by_store.py
 
 ### 款号成交价不等于款号来源归因
 
-当前已经完成“款号 × 月份”的成交价、销量和基础维度，但还没有获得足够稳定的 SKU/MSKU 级来源数据，因此不能把店铺月度来源总量直接解释为款号来源结构。
+当前已完成“款号 × 月份”的成交价、销量和基础维度，但尚未获得稳定的 SKU/MSKU 级来源数据，不能把店铺月度来源总量直接解释为款号来源结构。
 
 ### 负责人是当前快照
 
@@ -336,7 +357,7 @@ python reports/export_style_monthly_deal_price_by_store.py
 
 V2.0 的前提是取得稳定、可审计的 SKU/MSKU 级来源数据。
 
-推荐目标粒度：
+目标粒度：
 
 ```text
 店铺 × 月份 × 款号 × 来源类型
