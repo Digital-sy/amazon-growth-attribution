@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS `dwd_amz_order_attribution_base` (
     `promotion_ids` TEXT NULL,
     `offsite_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'promotion_ids命中MPC-',
     `shipping_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '免运费类促销标识',
-    `onsite_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Percentage Off、PLM或商品促销折扣>0',
-    `low_price_candidate_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '排除站外和站内促销后净单价<=7美元',
+    `onsite_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Percentage Off、PLM或商品促销折扣>0，仅作展示标签',
+    `low_price_candidate_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '排除站外、广告和站内促销后净单价<=10美元',
     `rule_version` VARCHAR(32) NOT NULL DEFAULT 'v1_20260727',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`source_id`),
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS `dwd_amz_order_attribution_result` (
     `estimated_ad_flag` TINYINT(1) NOT NULL DEFAULT 0,
     `onsite_promotion_flag` TINYINT(1) NOT NULL DEFAULT 0,
     `low_price_flag` TINYINT(1) NOT NULL DEFAULT 0,
-    `main_order_type` VARCHAR(20) NOT NULL COMMENT '站外推广/广告/站内促销/低价/自然',
+    `main_order_type` VARCHAR(20) NOT NULL COMMENT '互斥主来源：站外推广/广告/低价/自然',
     `classification_reason` VARCHAR(100) NOT NULL,
     `candidate_rank` INT NULL,
     `ad_orders_raw` INT NOT NULL DEFAULT 0,
@@ -108,14 +108,14 @@ CREATE TABLE IF NOT EXISTS `dwd_amz_order_attribution_result` (
     KEY `idx_result_sku_month` (`store_name`, `order_month`, `sku_key`),
     KEY `idx_result_order` (`store_name`, `amazon_order_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
-  COMMENT='Amazon订单商品明细五分类最终结果';
+  COMMENT='Amazon订单商品明细主来源结果，站内促销通过标签字段展示';
 
 CREATE TABLE IF NOT EXISTS `dws_amz_order_source_monthly` (
     `order_month` DATE NOT NULL,
     `store_name` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     `main_order_type` VARCHAR(20) NOT NULL,
     `classified_item_rows` BIGINT NOT NULL DEFAULT 0,
-    `order_sku_count` BIGINT NOT NULL DEFAULT 0 COMMENT '去重店铺+订单号+SKU，可加总的主订单指标',
+    `order_sku_count` BIGINT NOT NULL DEFAULT 0 COMMENT '主来源行可加总；站内促销行为重叠展示项',
     `amazon_order_count` BIGINT NOT NULL DEFAULT 0 COMMENT '跨类型可能重复，仅供参考',
     `units` BIGINT NOT NULL DEFAULT 0,
     `gross_item_sales` DECIMAL(20,4) NOT NULL DEFAULT 0,
@@ -124,4 +124,4 @@ CREATE TABLE IF NOT EXISTS `dws_amz_order_source_monthly` (
     PRIMARY KEY (`order_month`, `store_name`, `main_order_type`),
     KEY `idx_monthly_store` (`store_name`, `order_month`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
-  COMMENT='Amazon五类订单月度汇总';
+  COMMENT='Amazon来源月度汇总：四个主来源行+站内促销展示行';
